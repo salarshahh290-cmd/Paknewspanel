@@ -1,0 +1,84 @@
+<!doctype html><html lang="ur" dir="rtl"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pak News Admin</title>
+<style>
+body{font-family:Arial,sans-serif;background:#f4f6f8;margin:0;color:#17202a}
+header{background:#0b5d3b;color:white;padding:16px 20px;display:flex;justify-content:space-between}
+main{max-width:900px;margin:25px auto;padding:0 15px}.box{background:white;padding:20px;border-radius:12px;margin-bottom:20px}
+input,textarea,select{width:100%;padding:12px;margin:7px 0 15px;border:1px solid #ddd;border-radius:7px;font-size:16px}
+textarea{min-height:140px}button{padding:11px 16px;border:0;border-radius:7px;font-weight:bold;cursor:pointer}
+.primary{background:#0b5d3b;color:white}.danger{background:#b40000;color:white}.hidden{display:none}.news{border-top:1px solid #eee;padding:15px 0}.news img{width:150px;height:100px;object-fit:cover;border-radius:7px}
+</style></head><body>
+<header><div><b style="font-size:25px">Pak News</b><div>Admin Panel</div></div><div id="user"></div></header>
+<main>
+<section id="login" class="box"><h2>Admin Login</h2>
+<p>صرف authorized Gmail سے داخلہ ہوگا۔</p><button id="loginBtn">🔐 Google سے Sign in کریں</button><p id="msg"></p></section>
+<section id="dash" class="hidden">
+<div class="box"><h2 id="formTitle">نئی خبر شامل کریں</h2>
+<form id="form"><input type="hidden" id="editId">
+<label>عنوان</label><input id="title" required>
+<label>Category</label><select id="category"><option>پاکستان</option><option>خیبر پختونخوا</option><option>دنیا</option><option>کھیل</option><option>کاروبار</option><option>ٹیکنالوجی</option></select>
+<label>خبر کی تفصیل</label><textarea id="content" required></textarea>
+<label>تصویر</label><input id="image" type="file" accept="image/*">
+<button class="primary" type="submit">💾 محفوظ کریں</button> <button type="button" id="cancel">منسوخ</button>
+</form><p id="status"></p></div>
+<div class="box"><h2>خبریں</h2><div id="list">لوڈ ہو رہا ہے...</div></div>
+</section></main>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-storage-compat.js"></script>
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyAAUGwOWg5cTnRZPSYVspnDNqqDa_Ri4Lo",
+  authDomain: "pak-news-31b1c.firebaseapp.com",
+  projectId: "pak-news-31b1c",
+  storageBucket: "pak-news-31b1c.firebasestorage.app",
+  messagingSenderId: "5107439443",
+  appId: "1:5107439443:web:3c78ccdeee2eaf11f6b3a6"
+};
+firebase.initializeApp(firebaseConfig);
+const auth=firebase.auth(),db=firebase.firestore(),storage=firebase.storage();
+const ADMIN="salarshahh290@gmail.com";
+const $=x=>document.getElementById(x);
+$("loginBtn").onclick=async()=>{try{await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider())}catch(e){$("msg").textContent=e.message}};
+auth.onAuthStateChanged(async u=>{
+ if(u && (u.email||"").toLowerCase()===ADMIN.toLowerCase()){
+  $("login").classList.add("hidden");$("dash").classList.remove("hidden");
+  $("user").innerHTML=u.email+' <button id="out" class="danger">Logout</button>';
+  $("out").onclick=()=>auth.signOut(); load();
+ }else if(u){$("msg").textContent="یہ Gmail Admin کے لیے authorized نہیں ہے۔";await auth.signOut()}
+});
+$("form").onsubmit=async e=>{
+ e.preventDefault();$("status").textContent="محفوظ ہو رہا ہے...";
+ try{
+  const id=$("editId").value, file=$("image").files[0]; let imageUrl="";
+  if(file){if(file.size>5*1024*1024)throw Error("تصویر 5MB سے کم رکھیں");
+   const r=storage.ref("news-images/"+Date.now()+"_"+file.name.replace(/[^a-zA-Z0-9._-]/g,"_"));
+   await r.put(file);imageUrl=await r.getDownloadURL();
+  }
+  const data={title:$("title").value.trim(),category:$("category").value,
+   content:$("content").value.trim(),author:auth.currentUser.email,
+   updatedAt:firebase.firestore.FieldValue.serverTimestamp()};
+  if(id){if(imageUrl)data.imageUrl=imageUrl;await db.collection("news").doc(id).update(data)}
+  else{data.imageUrl=imageUrl;data.createdAt=firebase.firestore.FieldValue.serverTimestamp();await db.collection("news").add(data)}
+  reset();$("status").textContent="خبر محفوظ ہوگئی۔";load();
+ }catch(e){$("status").textContent="خرابی: "+e.message}
+};
+function reset(){$("form").reset();$("editId").value="";$("formTitle").textContent="نئی خبر شامل کریں"}
+$("cancel").onclick=reset;
+function esc(s){return String(s||"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
+async function load(){
+ try{const s=await db.collection("news").orderBy("createdAt","desc").get();$("list").innerHTML="";
+  if(s.empty){$("list").textContent="ابھی کوئی خبر نہیں";return}
+  s.forEach(d=>{const n=d.data(),x=document.createElement("div");x.className="news";
+   x.innerHTML=(n.imageUrl?'<img src="'+esc(n.imageUrl)+'">':'')+
+   '<h3>'+esc(n.title)+'</h3><p>'+esc(n.category)+'</p><p>'+esc((n.content||"").slice(0,160))+'</p>'+
+   '<button class="primary" onclick="editNews(\''+d.id+'\')">Edit</button> '+
+   '<button class="danger" onclick="deleteNews(\''+d.id+'\')">Delete</button>'; $("list").appendChild(x)})}
+ catch(e){$("list").textContent="Load error: "+e.message}
+}
+window.editNews=async id=>{const d=await db.collection("news").doc(id).get(),n=d.data();
+ $("editId").value=id;$("title").value=n.title||"";$("category").value=n.category||"پاکستان";$("content").value=n.content||"";$("formTitle").textContent="خبر Edit کریں";scrollTo(0,0)}
+window.deleteNews=async id=>{if(confirm("خبر Delete کریں؟")){await db.collection("news").doc(id).delete();load()}}
+</script></body></html>
